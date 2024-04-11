@@ -113,21 +113,24 @@ class CacheBackedEmbeddings(Embeddings):
         Returns:
             A list of embeddings for the given texts.
         """
-        vectors: List[Union[List[float], None]] = self.document_embedding_store.mget(
-            texts
-        )
-        all_missing_indices: List[int] = [
-            i for i, vector in enumerate(vectors) if vector is None
-        ]
+        embeddings: List[List[float]] = []
 
-        for missing_indices in batch_iterate(self.batch_size, all_missing_indices):
-            missing_texts = [texts[i] for i in missing_indices]
-            missing_vectors = self.underlying_embeddings.embed_documents(missing_texts)
-            self.document_embedding_store.mset(
-                list(zip(missing_texts, missing_vectors))
+        for batch in batch_iterate(self.batch_size, texts):
+            cached_embeddings: List[Union[List[float], None]] = (
+                self.document_embedding_store.mget(batch)
             )
-            for index, updated_vector in zip(missing_indices, missing_vectors):
-                vectors[index] = updated_vector
+            all_missing_indices: List[int] = [
+                i for i, vector in enumerate(cached_embeddings) if vector is None
+            ]
+
+            for missing_indices in batch_iterate(self.batch_size, all_missing_indices):
+                missing_texts = [texts[i] for i in missing_indices]
+                missing_vectors = self.underlying_embeddings.embed_documents(missing_texts)
+                self.document_embedding_store.mset(
+                    list(zip(missing_texts, missing_vectors))
+                )
+                for index, updated_vector in zip(missing_indices, missing_vectors):
+                    vectors[index] = updated_vector
 
         return cast(
             List[List[float]], vectors
